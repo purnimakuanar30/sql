@@ -1,0 +1,89 @@
+1. SELECT
+  TRUNC(purchase_time, 'MM') AS month_start,
+  COUNT(*) AS purchases_count
+FROM transactions
+WHERE refund_time IS NULL
+GROUP BY TRUNC(purchase_time, 'MM')
+ORDER BY TRUNC(purchase_time, 'MM');
+
+2. WITH oct20 AS (
+  SELECT *
+  FROM transactions
+  WHERE purchase_time >= TO_TIMESTAMP('2020-10-01 00:00:00','YYYY-MM-DD HH24:MI:SS')
+    AND purchase_time <  TO_TIMESTAMP('2020-11-01 00:00:00','YYYY-MM-DD HH24:MI:SS')
+)
+SELECT COUNT(*) AS stores_with_5_or_more_orders
+FROM (
+  SELECT store_id, COUNT(*) AS cnt
+  FROM oct20
+  GROUP BY store_id
+  HAVING COUNT(*) >= 5
+);
+
+3. SELECT
+  store_id,
+  MIN( (CAST(refund_time AS DATE) - CAST(purchase_time AS DATE)) * 24 * 60 ) AS shortest_refund_minutes
+FROM transactions
+WHERE refund_time IS NOT NULL
+GROUP BY store_id
+ORDER BY store_id;
+
+4. WITH ranked AS (
+  SELECT
+    t.*,
+    ROW_NUMBER() OVER (PARTITION BY store_id ORDER BY purchase_time) AS rn
+  FROM transactions t
+)
+SELECT store_id, gross_transaction_value, purchase_time
+FROM ranked
+WHERE rn = 1
+ORDER BY store_id;
+
+5. WITH first_per_buyer AS (
+  SELECT t.*,
+         ROW_NUMBER() OVER (PARTITION BY buyer_id ORDER BY purchase_time) AS rn
+  FROM transactions t
+)
+SELECT i.item_name, COUNT(*) AS cnt
+FROM first_per_buyer f
+JOIN items i
+  ON f.item_id = i.item_id
+WHERE f.rn = 1
+GROUP BY i.item_name
+ORDER BY cnt DESC
+FETCH FIRST 1 ROWS ONLY;
+
+6. SELECT
+  buyer_id,
+  purchase_time,
+  refund_time,
+  CASE
+    WHEN refund_time IS NULL THEN 'NO_REFUND'
+    WHEN (CAST(refund_time AS DATE) - CAST(purchase_time AS DATE)) * 24 <= 72 THEN 'REFUND_OK'
+    ELSE 'REFUND_TOO_LATE'
+  END AS refund_status
+FROM transactions
+ORDER BY buyer_id;
+
+7. WITH non_refunded AS (
+  SELECT * FROM transactions WHERE refund_time IS NULL
+),
+ranked_buys AS (
+  SELECT nr.*,
+         ROW_NUMBER() OVER (PARTITION BY buyer_id ORDER BY purchase_time) AS rn
+  FROM non_refunded nr
+)
+SELECT buyer_id, purchase_time, store_id, item_id, gross_transaction_value
+FROM ranked_buys
+WHERE rn = 2
+ORDER BY buyer_id;
+
+8. WITH r AS (
+  SELECT buyer_id, purchase_time,
+         ROW_NUMBER() OVER (PARTITION BY buyer_id ORDER BY purchase_time) AS rn
+  FROM transactions
+)
+SELECT buyer_id, purchase_time AS second_purchase_time
+FROM r
+WHERE rn = 2
+ORDER BY buyer_id;
